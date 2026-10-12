@@ -28,6 +28,13 @@ set -euo pipefail
   trap at_exit EXIT
 
   kernel=$(uname -s | tr "[:upper:]" "[:lower:]")
+  exe=
+  case "${kernel}" in
+    msys*|mingw*)
+      kernel=windows
+      exe=.exe
+      ;;
+  esac
   case "$(uname -m)" in
     x86_64)
       machine=amd64
@@ -35,7 +42,10 @@ set -euo pipefail
     i686 | i386)
       machine=386
       ;;
-    aarch64)
+    armv7l)
+      machine=arm
+      ;;
+    aarch64 | arm64)
       machine=arm64
       ;;
     *)
@@ -49,7 +59,9 @@ set -euo pipefail
   : "${bin_path:=}"
 
   if [[ -z "$bin_path" ]]; then
-    log "looking for a writeable PATH"
+    log "bin_path is not set, you can set bin_path to specify the installation path"
+    log "e.g. export bin_path=/path/to/installation before installing"
+    log "looking for a writeable path from PATH environment variable"
     for path in $(echo "$PATH" | tr ':' '\n'); do
       if [[ -w $path ]]; then
         bin_path=$path
@@ -62,24 +74,42 @@ set -euo pipefail
   fi
   echo "bin_path=$bin_path"
 
+  if [[ -n "${version:-}" ]]; then
+    release="tags/${version}"
+  else
+    release="latest"
+  fi
+  echo "release=$release"
+
+  curl_args=(
+    -fL
+    "https://api.github.com/repos/direnv/direnv/releases/$release"
+  )
+
+  if [[ -n "${DIRENV_GITHUB_API_TOKEN:-}" ]]; then
+    # note: this doesn't actually print the token value.
+    echo "using DIRENV_GITHUB_API_TOKEN for GitHub API authentication"
+    curl_args+=(-H "Authorization: Bearer ${DIRENV_GITHUB_API_TOKEN}")
+  fi
+
   log "looking for a download URL"
   download_url=$(
-    curl -fL https://api.github.com/repos/direnv/direnv/releases/latest \
+    curl "${curl_args[@]}" \
     | grep browser_download_url \
     | cut -d '"' -f 4 \
-    | grep "direnv.$kernel.$machine"
+    | grep -E "direnv.$kernel.$machine(\.exe)?\$"
   )
   echo "download_url=$download_url"
 
   log "downloading"
-  curl -o "$bin_path/direnv" -fL "$download_url"
-  chmod +x "$bin_path/direnv"
+  curl -o "$bin_path/direnv$exe" -fL "$download_url"
+  chmod a+x "$bin_path/direnv$exe"
 
   cat <<DONE
 
 The direnv binary is now available in:
 
-    $bin_path/direnv
+    $bin_path/direnv$exe
 
 The last step is to configure your shell to use it. For example for bash, add
 the following lines at the end of your ~/.bashrc:

@@ -4,7 +4,7 @@ DIRENV-FETCHURL 1 "2019" direnv "User Manuals"
 NAME
 ----
 
-direnv fetchurl - Fetch a URL to disk
+direnv-fetchurl - Fetch a URL to disk
 
 SYNOPSIS
 --------
@@ -43,7 +43,7 @@ OPTIONS
 <integrity-hash>
     When passed, the integrity of the retrieved content will be validated
     against the given hash. The hash encoding is based on the SRI W3C
-    specificiation (see https://www.w3.org/TR/SRI/ ).
+    specification (see https://www.w3.org/TR/SRI/ ).
 
 OUTPUT
 ------

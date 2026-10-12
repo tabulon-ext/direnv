@@ -2,7 +2,7 @@
 
 cd `dirname $0`
 setenv TEST_DIR $PWD
-setenv PATH `dirname $TEST_DIR`:$PATH
+setenv PATH `dirname $TEST_DIR`:"$PATH"
 setenv XDG_CONFIG_HOME $TEST_DIR/config
 setenv XDG_DATA_HOME $TEST_DIR/data
 
@@ -10,7 +10,7 @@ setenv XDG_DATA_HOME $TEST_DIR/data
 setenv DIRENV_CONFIG $PWD
 unsetenv DIRENV_BASH
 unsetenv DIRENV_DIR
-unsetenv DIRENV_MTIME
+unsetenv DIRENV_FILE
 unsetenv DIRENV_WATCHES
 unsetenv DIRENV_DIFF
 
@@ -34,6 +34,7 @@ direnv allow || true
 direnv_eval
 
 cd $TEST_DIR/scenarios/base
+  direnv allow
   echo "Testing base"
   direnv_eval
   test "$HELLO" = "world"

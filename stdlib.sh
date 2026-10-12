@@ -15,9 +15,6 @@ shopt -s extglob
 # NOTE: don't touch the RHS, it gets replaced at runtime
 direnv="$(command -v direnv)"
 
-# Config, change in the direnvrc
-DIRENV_LOG_FORMAT="${DIRENV_LOG_FORMAT-direnv: %s}"
-
 # Where direnv configuration should be stored
 direnv_config_dir="${DIRENV_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/direnv}"
 
@@ -35,8 +32,8 @@ __env_strictness() {
   mode="$1"
   shift
 
-  set +o | grep 'pipefail\|nounset\|errexit' > "$tmpfile"
-  old_shell_options=$(< "$tmpfile")
+  set +o | grep 'pipefail\|nounset\|errexit' >"$tmpfile"
+  old_shell_options=$(<"$tmpfile")
   rm -f "$tmpfile"
 
   case "$mode" in
@@ -125,42 +122,28 @@ direnv_layout_dir() {
 #
 # Logs a status message. Acts like echo,
 # but wraps output in the standard direnv log format
-# (controlled by $DIRENV_LOG_FORMAT), and directs it
-# to stderr rather than stdout.
+# and directs it to stderr rather than stdout.
 #
 # Example:
 #
 #    log_status "Loading ..."
 #
 log_status() {
-  if [[ -n $DIRENV_LOG_FORMAT ]]; then
-    local msg=$*
-    # shellcheck disable=SC2059,SC1117
-    printf "${DIRENV_LOG_FORMAT}\n" "$msg" >&2
-  fi
+  "$direnv" log -status "$*"
 }
 
 # Usage: log_error [<message> ...]
 #
 # Logs an error message. Acts like echo,
 # but wraps output in the standard direnv log format
-# (controlled by $DIRENV_LOG_FORMAT), and directs it
-# to stderr rather than stdout.
+# and directs it to stderr rather than stdout.
 #
 # Example:
 #
 #    log_error "Unable to find specified directory!"
 
 log_error() {
-  local color_normal
-  local color_error
-  color_normal=$(tput sgr0)
-  color_error=$(tput setaf 1)
-  if [[ -n $DIRENV_LOG_FORMAT ]]; then
-    local msg=$*
-    # shellcheck disable=SC2059,SC1117
-    printf "${color_error}${DIRENV_LOG_FORMAT}${color_normal}\n" "$msg" >&2
-  fi
+  "$direnv" log -error "$*"
 }
 
 # Usage: has <command>
@@ -199,23 +182,48 @@ join_args() {
 #    # output: /usr/local/foo
 #
 expand_path() {
-  local REPLY; realpath.absolute "${2+"$2"}" "${1+"$1"}"; echo "$REPLY"
+  local REPLY
+  realpath.absolute "${2+"$2"}" "${1+"$1"}"
+  echo "$REPLY"
 }
 
 # --- vendored from https://github.com/bashup/realpaths
-realpath.dirname() { REPLY=.; ! [[ $1 =~ /+[^/]+/*$|^//$ ]] || REPLY="${1%${BASH_REMATCH[0]}}"; REPLY=${REPLY:-/}; }
-realpath.basename(){ REPLY=/; ! [[ $1 =~ /*([^/]+)/*$ ]] || REPLY="${BASH_REMATCH[1]}"; }
+realpath.dirname() {
+  REPLY=.
+  ! [[ $1 =~ /+[^/]+/*$|^//$ ]] || REPLY="${1%"${BASH_REMATCH[0]}"}"
+  REPLY=${REPLY:-/}
+}
+realpath.basename() {
+  REPLY=/
+  ! [[ $1 =~ /*([^/]+)/*$ ]] || REPLY="${BASH_REMATCH[1]}"
+}
 
 realpath.absolute() {
-  REPLY=$PWD; local eg=extglob; ! shopt -q $eg || eg=; ${eg:+shopt -s $eg}
+  REPLY=$PWD
+  local eg=extglob
+  ! shopt -q $eg || eg=
+  ${eg:+shopt -s $eg}
   while (($#)); do case $1 in
-    //|//[^/]*) REPLY=//; set -- "${1:2}" "${@:2}" ;;
-    /*) REPLY=/; set -- "${1##+(/)}" "${@:2}" ;;
-    */*) set -- "${1%%/*}" "${1##${1%%/*}+(/)}" "${@:2}" ;;
-    ''|.) shift ;;
-    ..) realpath.dirname "$REPLY"; shift ;;
-    *) REPLY="${REPLY%/}/$1"; shift ;;
-  esac; done; ${eg:+shopt -u $eg}
+    // | //[^/]*)
+      REPLY=//
+      set -- "${1:2}" "${@:2}"
+      ;;
+    /*)
+      REPLY=/
+      set -- "${1##+(/)}" "${@:2}"
+      ;;
+    */*) set -- "${1%%/*}" "${1##"${1%%/*}"+(/)}" "${@:2}" ;;
+    '' | .) shift ;;
+    ..)
+      realpath.dirname "$REPLY"
+      shift
+      ;;
+    *)
+      REPLY="${REPLY%/}/$1"
+      shift
+      ;;
+    esac done
+  ${eg:+shopt -u $eg}
 }
 # ---
 
@@ -230,12 +238,15 @@ dotenv() {
   elif [[ -d $path ]]; then
     path=$path/.env
   fi
-  watch_file "$path"
-  if ! [[ -f $path ]]; then
+  # reading a FIFO changes its mtime, so watching it reloads on every prompt
+  [[ -p $path ]] || watch_file "$path"
+  if ! [[ -f $path || -p $path ]]; then
     log_error ".env at $path not found"
     return 1
   fi
-  eval "$("$direnv" dotenv bash "$@")"
+  local __direnv_out
+  __direnv_out="$("$direnv" dotenv bash "$@")"
+  eval "$__direnv_out"
 }
 
 # Usage: dotenv_if_exists [<filename>]
@@ -249,11 +260,38 @@ dotenv_if_exists() {
   elif [[ -d $path ]]; then
     path=$path/.env
   fi
-  watch_file "$path"
-  if ! [[ -f $path ]]; then
+  [[ -p $path ]] || watch_file "$path"
+  if ! [[ -f $path || -p $path ]]; then
     return
   fi
-  eval "$("$direnv" dotenv bash "$@")"
+  local __direnv_out
+  __direnv_out="$("$direnv" dotenv bash "$@")"
+  eval "$__direnv_out"
+}
+
+# Usage: require_allowed <filename> [<filename> ...]
+#
+# Requires that the specified files are approved before loading the .envrc.
+# If any files haven't been approved or have changed since approval, direnv
+# will prompt the user to run `direnv allow` again.
+#
+# This helps prevent supply chain attacks by ensuring that changes to
+# critical files (like pixi.toml, package.json, etc.) require explicit
+# user approval.
+#
+# Example:
+#
+#    require_allowed pixi.toml pixi.lock
+#
+require_allowed() {
+  # Also watch these files for changes
+  watch_file "$@"
+
+  # Check if files are in the allowed-required DB
+  # Pass $PWD/.envrc as the envrc path since we're executing in the .envrc's directory
+  local __direnv_out
+  __direnv_out="$("$direnv" check-required bash "$PWD/.envrc" "$@")"
+  eval "$__direnv_out"
 }
 
 # Usage: user_rel_path <abs_path>
@@ -276,7 +314,7 @@ user_rel_path() {
   if [[ -z $abs_path ]]; then return; fi
 
   if [[ -n $HOME ]]; then
-    local rel_path=${abs_path#$HOME}
+    local rel_path=${abs_path#"$HOME"}
     if [[ $rel_path != "$abs_path" ]]; then
       abs_path=~$rel_path
     fi
@@ -321,7 +359,7 @@ find_up() {
 # NOTE: the other ".envrc" is not checked by the security framework.
 source_env() {
   local rcpath=${1/#\~/$HOME}
-  if has cygpath ; then
+  if has cygpath; then
     rcpath=$(cygpath -u "$rcpath")
   fi
 
@@ -346,7 +384,7 @@ source_env() {
   pushd "$(pwd 2>/dev/null)" >/dev/null || return 1
   pushd "$rcpath_dir" >/dev/null || return 1
   if [[ -f ./$rcpath_base ]]; then
-    log_status "loading $rcfile"
+    log_status "loading $(user_rel_path "$(expand_path "$rcpath_base")")"
     # shellcheck disable=SC1090
     . "./$rcpath_base"
   else
@@ -372,6 +410,33 @@ source_env_if_exists() {
   if [[ -f "$1" ]]; then source_env "$1"; fi
 }
 
+# Usage: env_vars_required <varname> [<varname> ...]
+#
+# Logs error for every variable not present in the environment or having an empty value.
+# Typically this is used in combination with source_env and source_env_if_exists.
+#
+# Example:
+#
+#     # expect .envrc.private to provide tokens
+#     source_env .envrc.private
+#     # check presence of tokens
+#     env_vars_required GITHUB_TOKEN OTHER_TOKEN
+#
+env_vars_required() {
+  local environment
+  local -i ret
+  environment=$(env)
+  ret=0
+
+  for var in "$@"; do
+    if [[ "$environment" != *"$var="* || -z ${!var:-} ]]; then
+      log_error "env var $var is required but missing/empty"
+      ret=1
+    fi
+  done
+  return "$ret"
+}
+
 # Usage: watch_file <filename> [<filename> ...]
 #
 # Adds each <filename> to the list of files that direnv will watch for changes -
@@ -379,27 +444,57 @@ source_env_if_exists() {
 # especially in direnvrc
 #
 watch_file() {
-  eval "$("$direnv" watch bash "$@")"
+  local __direnv_out
+  __direnv_out="$("$direnv" watch bash "$@")"
+  eval "$__direnv_out"
 }
 
 # Usage: watch_dir <dir>
 #
 # Adds <dir> to the list of dirs that direnv will recursively watch for changes
 watch_dir() {
-  eval "$("$direnv" watch-dir bash "$1")"
+  local __direnv_out
+  __direnv_out="$("$direnv" watch-dir bash "$1")"
+  eval "$__direnv_out"
+}
+
+# Usage: _source_up [<filename>] [true|false]
+#
+# Private helper function for source_up and source_up_if_exists. The second
+# parameter determines if it's an error for the file we're searching for to
+# not exist.
+_source_up() {
+  local envrc file=${1:-.envrc}
+  local ok_if_not_exist=${2}
+  envrc=$(cd .. && (find_up "$file" || true))
+  if [[ -n $envrc ]]; then
+    source_env "$envrc"
+  elif $ok_if_not_exist; then
+    return 0
+  else
+    log_error "No ancestor $file found"
+    return 1
+  fi
 }
 
 # Usage: source_up [<filename>]
 #
-# Loads another ".envrc" if found with the find_up command.
+# Loads another ".envrc" if found with the find_up command. Returns 1 if no
+# file is found.
 #
 # NOTE: the other ".envrc" is not checked by the security framework.
 source_up() {
-  local dir file=${1:-.envrc}
-  dir=$(cd .. && find_up "$file")
-  if [[ -n $dir ]]; then
-    source_env "$dir"
-  fi
+  _source_up "${1:-}" false
+}
+
+# Usage: source_up_if_exists [<filename>]
+#
+# Loads another ".envrc" if found with the find_up command. If one is not
+# found, nothing happens.
+#
+# NOTE: the other ".envrc" is not checked by the security framework.
+source_up_if_exists() {
+  _source_up "${1:-}" true
 }
 
 # Usage: fetchurl <url> [<integrity-hash>]
@@ -412,7 +507,7 @@ fetchurl() {
 
 # Usage: source_url <url> <integrity-hash>
 #
-# Fetches a URL and evalutes its content.
+# Fetches a URL and evaluates its content.
 source_url() {
   local url=$1 integrity_hash=${2:-} path
   if [[ -z $url ]]; then
@@ -458,14 +553,15 @@ direnv_load() {
   # `set -e`, for example) and hence always remove the temporary directory.
   touch "$output_file" &&
     DIRENV_DUMP_FILE_PATH="$output_file" "$@" &&
-    { test -s "$output_file" || {
+    {
+      test -s "$output_file" || {
         log_error "Environment not dumped; did you invoke 'direnv dump'?"
         false
       }
     } &&
-    "$direnv" apply_dump "$output_file" > "$script_file" &&
+    "$direnv" apply_dump "$output_file" >"$script_file" &&
     source "$script_file" ||
-      exit_code=$?
+    exit_code=$?
 
   # Scrub temporary directory
   rm -rf "$temp_dir"
@@ -491,7 +587,9 @@ direnv_load() {
 # Loads the output of `direnv dump` that was stored in a file.
 direnv_apply_dump() {
   local path=$1
-  eval "$("$direnv" apply_dump "$path")"
+  local __direnv_out
+  __direnv_out="$("$direnv" apply_dump "$path")"
+  eval "$__direnv_out"
 }
 
 # Usage: PATH_add <path> [<path> ...]
@@ -679,10 +777,10 @@ semver_search() {
   # strip $version_dir/$prefix prefix from line.
   # Sort by version: split by "." then reverse numeric sort for each piece of the version string
   # The first one is the highest
-  find "$version_dir" -maxdepth 1 -mindepth 1 -type d -name "${prefix}${partial_version}*" \
-    | while IFS= read -r line; do echo "${line#${version_dir%/}/${prefix}}"; done \
-    | sort -t . -k 1,1rn -k 2,2rn -k 3,3rn \
-    | head -1
+  find "$version_dir" -maxdepth 1 -mindepth 1 -type d -name "${prefix}${partial_version}*" |
+    while IFS= read -r line; do echo "${line#"${version_dir%/}"/"${prefix}"}"; done |
+    sort -t . -k 1,1rn -k 2,2rn -k 3,3rn |
+    head -1
 }
 
 # Usage: layout <type>
@@ -690,19 +788,29 @@ semver_search() {
 # A semantic dispatch used to describe common project layouts.
 #
 layout() {
-  local name=$1
+  local funcname="layout_$1"
   shift
-  eval "layout_$name" "$@"
+  "$funcname" "$@"
+  local layout_dir
+  layout_dir=$(direnv_layout_dir)
+  if [[ -d "$layout_dir" && ! -f "$layout_dir/CACHEDIR.TAG" ]]; then
+    echo 'Signature: 8a477f597d28d172789f06886806bc55
+# This file is a cache directory tag created by direnv.
+# For information about cache directory tags, see:
+#	http://www.brynosaurus.com/cachedir/' >"$layout_dir/CACHEDIR.TAG"
+  fi
 }
 
 # Usage: layout go
 #
 # Adds "$(direnv_layout_dir)/go" to the GOPATH environment variable.
-# And also adds "$PWD/bin" to the PATH environment variable.
-#
+# Furthermore "$(direnv_layout_dir)/go/bin" is set as the value for the GOBIN environment variable and added to the PATH environment variable.
 layout_go() {
   path_add GOPATH "$(direnv_layout_dir)/go"
-  PATH_add "$(direnv_layout_dir)/go/bin"
+
+  bindir="$(direnv_layout_dir)/go/bin"
+  PATH_add "$bindir"
+  export GOBIN="$bindir"
 }
 
 # Usage: layout node
@@ -710,6 +818,16 @@ layout_go() {
 # Adds "$PWD/node_modules/.bin" to the PATH environment variable.
 layout_node() {
   PATH_add node_modules/.bin
+}
+
+# Usage: layout opam
+#
+# Sets environment variables from `opam env`.
+layout_opam() {
+  export OPAMSWITCH=$PWD
+  local result
+  result="$(opam env "$@")"
+  eval "$result"
 }
 
 # Usage: layout perl
@@ -735,11 +853,43 @@ layout_php() {
   PATH_add vendor/bin
 }
 
+# Usage: layout pixi [args]
+#
+# Loads a pixi environment. Arguments are passed to `pixi shell-hook`,
+# e.g. `layout pixi -e <env_name>`.
+# Must be used in the workspace root. The manifest and pixi.lock need to be
+# approved with `direnv allow` whenever they change.
+layout_pixi() {
+  local manifest
+  if [[ -f pixi.toml ]]; then
+    manifest=pixi.toml
+  elif [[ -f pyproject.toml ]]; then
+    manifest=pyproject.toml
+  else
+    log_error "No pixi.toml or pyproject.toml found. Use \`pixi init\` to create a workspace first."
+    exit 2
+  fi
+
+  if [[ ! -f pixi.lock ]]; then
+    watch_file pixi.lock
+    log_error "No pixi.lock found. Run \`pixi lock\` in the workspace root, review it and run \`direnv allow\`."
+    exit 2
+  fi
+
+  # also watches both files
+  require_allowed "$manifest" pixi.lock
+
+  local __direnv_out
+  __direnv_out="$(pixi shell-hook "$@")"
+  eval "$__direnv_out"
+}
+
 # Usage: layout python <python_exe>
 #
-# Creates and loads a virtual environment under
+# Creates and loads a virtual environment.
+# You can specify the path of the virtual environment through VIRTUAL_ENV
+# environment variable, otherwise it will be set to
 # "$direnv_layout_dir/python-$python_version".
-# This forces the installation of any egg into the project's sub-folder.
 # For python older then 3.3 this requires virtualenv to be installed.
 #
 # It's possible to specify the python executable if you want to use different
@@ -756,28 +906,47 @@ layout_python() {
   else
     local python_version ve
     # shellcheck disable=SC2046
-    read -r python_version ve <<<$($python -c "import pkgutil as u, platform as p;ve='venv' if u.find_loader('venv') else ('virtualenv' if u.find_loader('virtualenv') else '');print(p.python_version()+' '+ve)")
+    read -r python_version ve <<<$($python <<EOF
+import platform as p
+try:
+ import venv
+ ve="venv"
+except Exception:
+ try:
+   import virtualenv
+   ve="virtualenv"
+ except Exception:
+   ve=""
+print(".".join(p.python_version_tuple()[:2])+" "+ve)
+EOF
+)
     if [[ -z $python_version ]]; then
       log_error "Could not find python's version"
       return 1
     fi
 
-    VIRTUAL_ENV=$(direnv_layout_dir)/python-$python_version
+    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+      local REPLY
+      realpath.absolute "$VIRTUAL_ENV"
+      VIRTUAL_ENV=$REPLY
+    else
+      VIRTUAL_ENV=$(direnv_layout_dir)/python-$python_version
+    fi
     case $ve in
-      "venv")
-        if [[ ! -d $VIRTUAL_ENV ]]; then
-          $python -m venv "$@" "$VIRTUAL_ENV"
-        fi
-        ;;
-      "virtualenv")
-        if [[ ! -d $VIRTUAL_ENV ]]; then
-          $python -m virtualenv "$@" "$VIRTUAL_ENV"
-        fi
-        ;;
-      *)
-        log_error "Error: neither venv nor virtualenv are available."
-        return 1
-        ;;
+    "venv")
+      if [[ ! -d $VIRTUAL_ENV ]]; then
+        $python -m venv "$@" "$VIRTUAL_ENV"
+      fi
+      ;;
+    "virtualenv")
+      if [[ ! -d $VIRTUAL_ENV ]]; then
+        $python -m virtualenv "$@" "$VIRTUAL_ENV"
+      fi
+      ;;
+    *)
+      log_error "Error: neither venv nor virtualenv are available."
+      return 1
+      ;;
     esac
   fi
   export VIRTUAL_ENV
@@ -800,17 +969,26 @@ layout_python3() {
   layout_python python3 "$@"
 }
 
-# Usage: layout anaconda <env_name_or_prefix> [<conda_exe>]
+# Usage: layout anaconda <env_spec> [<conda_exe>]
 #
-# Activates anaconda for the named environment or prefix. If the environment
-# hasn't been created, it will be using the environment.yml file in
-# the current directory. <conda_exe> is optional and will default to
-# the one found in the system environment.
+# Activates anaconda for the provided environment.
+# The <env_spec> can be one of the following:
+#   1. Name of an environment
+#   2. Prefix path to an environment
+#   3. Path to a yml-formatted file specifying the environment
+#
+# Environment creation will use environment.yml, if
+# available, when a name or prefix is provided. Otherwise,
+# an empty environment will be created.
+#
+# <conda_exe> is optional and will default to the one
+# found in the system environment.
 #
 layout_anaconda() {
-  local env_name_or_prefix=$1
+  local env_spec=$1
   local env_name
   local env_loc
+  local env_config
   local conda
   local REPLY
   if [[ $# -gt 1 ]]; then
@@ -820,36 +998,76 @@ layout_anaconda() {
   fi
   realpath.dirname "$conda"
   PATH_add "$REPLY"
-  if [[ "${env_name_or_prefix%%/*}" == "." ]]; then
+
+  if [[ "${env_spec##*.}" == "yml" ]]; then
+    env_config=$env_spec
+  elif [[ "${env_spec%%/*}" == "." ]]; then
     # "./foo" relative prefix
-    realpath.absolute "$env_name_or_prefix"
+    realpath.absolute "$env_spec"
     env_loc="$REPLY"
-  elif [[ ! "$env_name_or_prefix" == "${env_name_or_prefix#/}" ]]; then
+  elif [[ ! "$env_spec" == "${env_spec#/}" ]]; then
     # "/foo" absolute prefix
-    env_loc="$env_name_or_prefix"
+    env_loc="$env_spec"
+  elif [[ -n "$env_spec" ]]; then
+    # "name" specified
+    env_name="$env_spec"
   else
-    # "foo" name
-    env_name="$env_name_or_prefix"
-    env_loc=$("$conda" env list | grep -- '^'"$env_name"'\s')
-    env_loc="${env_loc##* }"
+    # Need at least one
+    env_config=environment.yml
   fi
-  if [[ ! -d "$env_loc" ]]; then
-    if [[ -e environment.yml ]]; then
-      log_status "creating conda environment"
-      if [[ -n "$env_name" ]]; then
-        "$conda" env create --name "$env_name"
-        env_loc=$("$conda" env list | grep -- '^'"$env_name"'\s')
-        env_loc="/${env_loc##* /}"
-      else
-        "$conda" env create --prefix "$env_loc"
+
+  # If only config, it needs a name field
+  if [[ -n "$env_config" ]]; then
+    if [[ -e "$env_config" ]]; then
+      env_name="$(grep -- '^name:' "$env_config")"
+      env_name="${env_name/#name:*([[:space:]])/}"
+      if [[ -z "$env_name" ]]; then
+        log_error "Unable to find 'name' in '$env_config'"
+        return 1
       fi
     else
-      log_error "Could not find environment.yml"
+      log_error "Unable to find config '$env_config'"
       return 1
     fi
   fi
 
-  eval "$( "$conda" shell.bash activate "$env_loc" )"
+  # Try to find location based on name
+  if [[ -z "$env_loc" ]]; then
+    # Update location if already created
+    env_loc=$("$conda" env list | grep -- '^'"$env_name"'\s')
+    env_loc="${env_loc##* }"
+  fi
+
+  # Check for environment existence
+  if [[ ! -d "$env_loc" ]]; then
+
+    # Create if necessary
+    if [[ -z "$env_config" ]] && [[ -n "$env_name" ]]; then
+      if [[ -e environment.yml ]]; then
+        "$conda" env create --file environment.yml --name "$env_name"
+      else
+        "$conda" create -y --name "$env_name"
+      fi
+    elif [[ -n "$env_config" ]]; then
+      "$conda" env create --file "$env_config"
+    elif [[ -n "$env_loc" ]]; then
+      if [[ -e environment.yml ]]; then
+        "$conda" env create --file environment.yml --prefix "$env_loc"
+      else
+        "$conda" create -y --prefix "$env_loc"
+      fi
+    fi
+
+    if [[ -z "$env_loc" ]]; then
+      # Update location if already created
+      env_loc=$("$conda" env list | grep -- '^'"$env_name"'\s')
+      env_loc="${env_loc##* }"
+    fi
+  fi
+
+  local result
+  result="$("$conda" shell.bash activate "$env_loc")"
+  eval "$result"
 }
 
 # Usage: layout pipenv
@@ -864,7 +1082,10 @@ layout_pipenv() {
     exit 2
   fi
 
-  VIRTUAL_ENV=$(pipenv --venv 2>/dev/null ; true)
+  VIRTUAL_ENV=$(
+    pipenv --venv 2>/dev/null
+    true
+  )
 
   if [[ -z $VIRTUAL_ENV || ! -d $VIRTUAL_ENV ]]; then
     pipenv install --dev
@@ -882,7 +1103,9 @@ layout_pipenv() {
 #
 #    layout pyenv 3.6.7
 #
-# Uses pyenv and layout_python to create and load a virtual environment under
+# Uses pyenv and layout_python to create and load a virtual environment.
+# You can specify the path of the virtual environment through VIRTUAL_ENV
+# environment variable, otherwise it will be set to
 # "$direnv_layout_dir/python-$python_version".
 #
 layout_pyenv() {
@@ -907,6 +1130,44 @@ layout_pyenv() {
   done
 
   [[ -n "$PYENV_VERSION" ]] && export PYENV_VERSION
+}
+
+# Usage: layout uv [<uv-sync-args>...]
+#
+# Similar to layout_python, but syncs the uv project with `uv sync --frozen`
+# and activates its virtual environment. Requires a pyproject.toml.
+#
+# Arguments are passed to `uv sync`. The Python version comes from
+# .python-version, pyproject.toml or UV_PYTHON, e.g. `UV_PYTHON=3.12 layout uv`.
+# The virtual environment path can be overridden with UV_PROJECT_ENVIRONMENT.
+#
+layout_uv() {
+  watch_file .python-version pyproject.toml uv.lock
+
+  if ! has uv; then
+    log_error "uv: command not found. Install from https://docs.astral.sh/uv/"
+    return 1
+  fi
+
+  if [[ ! -f pyproject.toml ]]; then
+    log_error "uv: no pyproject.toml found. Run \`uv init\` to create a project."
+    return 1
+  fi
+
+  local venv_path
+  venv_path=$(expand_path "${UV_PROJECT_ENVIRONMENT:-.venv}")
+  export UV_PROJECT_ENVIRONMENT=$venv_path
+
+  # never modify uv.lock from an .envrc
+  uv sync --frozen "$@" || return
+
+  export VIRTUAL_ENV=$venv_path
+  if [[ -d "$venv_path/bin" ]]; then
+    PATH_add "$venv_path/bin"
+  fi
+  if [[ -d "$venv_path/Scripts" ]]; then
+    PATH_add "$venv_path/Scripts"
+  fi
 }
 
 # Usage: layout ruby
@@ -1000,7 +1261,8 @@ use_julia() {
     return 1
   fi
 
-  load_prefix "$julia_prefix"
+  PATH_add "$julia_prefix/bin"
+  MANPATH_add "$julia_prefix/share/man"
 
   log_status "Successfully loaded $(julia --version), from prefix ($julia_prefix)"
 }
@@ -1010,7 +1272,9 @@ use_julia() {
 # Loads rbenv which add the ruby wrappers available on the PATH.
 #
 use_rbenv() {
-  eval "$(rbenv init -)"
+  local result
+  result="$(rbenv init -)"
+  eval "$result"
 }
 
 # Usage: rvm [...]
@@ -1020,13 +1284,13 @@ use_rbenv() {
 rvm() {
   unset rvm
   if [[ -n ${rvm_scripts_path:-} ]]; then
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "${rvm_scripts_path}/rvm"
   elif [[ -n ${rvm_path:-} ]]; then
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "${rvm_path}/scripts/rvm"
   else
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "$HOME/.rvm/scripts/rvm"
   fi
   rvm "$@"
@@ -1073,12 +1337,14 @@ use_node() {
     via=".node-version"
   fi
 
+  version=${version#v}
+
   if [[ -z $version ]]; then
     log_error "I do not know which NodeJS version to load because one has not been specified!"
     return 1
   fi
 
-  # Search for the highest version matchin $version in the folder
+  # Search for the highest version matching $version in the folder
   search_version=$(semver_search "$NODE_VERSIONS" "${node_version_prefix}" "${version}")
   node_prefix="${NODE_VERSIONS}/${node_version_prefix}${search_version}"
 
@@ -1117,10 +1383,10 @@ use_nodenv() {
   node_versions_dir="$(nodenv root)/versions"
   nodenv_version="${node_versions_dir}/${node_version}"
   if [[ -e "$nodenv_version" ]]; then
-      # Put the selected node version in the PATH
-      NODE_VERSIONS="${node_versions_dir}" NODE_VERSION_PREFIX="" use_node "${node_version}"
-      # Add $PWD/node_modules/.bin to the PATH
-      layout_node
+    # Put the selected node version in the PATH
+    NODE_VERSIONS="${node_versions_dir}" NODE_VERSION_PREFIX="" use_node "${node_version}"
+    # Add $PWD/node_modules/.bin to the PATH
+    layout_node
   else
     log_error "nodenv: version '$node_version' not installed.  Use \`nodenv install ${node_version}\` to install it first."
     return 1
@@ -1135,25 +1401,162 @@ use_nodenv() {
 # (e.g `use nix -p ocaml`).
 #
 use_nix() {
+  local -A values_to_restore=(
+    ["NIX_BUILD_TOP"]=${NIX_BUILD_TOP:-__UNSET__}
+    ["NIX_ATTRS_JSON_FILE"]=${NIX_ATTRS_JSON_FILE:-__UNSET__}
+    ["NIX_ATTRS_SH_FILE"]=${NIX_ATTRS_SH_FILE:-__UNSET__}
+    ["TMP"]=${TMP:-__UNSET__}
+    ["TMPDIR"]=${TMPDIR:-__UNSET__}
+    ["TEMP"]=${TEMP:-__UNSET__}
+    ["TEMPDIR"]=${TEMPDIR:-__UNSET__}
+    ["terminfo"]=${terminfo:-__UNSET__}
+  )
   direnv_load nix-shell --show-trace "$@" --run "$(join_args "$direnv" dump)"
+  for key in "${!values_to_restore[@]}"; do
+    local value=${values_to_restore[$key]}
+    if [[ $value == __UNSET__ ]]; then
+      unset "$key"
+    else
+      export "$key=$value"
+    fi
+  done
+
   if [[ $# == 0 ]]; then
     watch_file default.nix shell.nix
   fi
 }
 
+# Usage: use_flake [<installable>]
+#
+# Load the build environment of a derivation similar to `nix develop`.
+#
+# By default it will load the current folder flake.nix devShell attribute. Or
+# pass an "installable" like "nixpkgs#hello" to load all the build
+# dependencies of the hello package from the latest nixpkgs.
+#
+# Note that the flakes feature is hidden behind an experimental flag, which
+# you will have to enable on your own. Flakes is not considered stable yet.
+use_flake() {
+  watch_file flake.nix
+  watch_file flake.lock
+  mkdir -p "$(direnv_layout_dir)"
+  local result
+  result="$(nix --extra-experimental-features "nix-command flakes" print-dev-env --profile "$(direnv_layout_dir)/flake-profile" "$@")"
+  eval "$result"
+  # refresh the gcroot mtime so age-based GC (e.g. nh clean) keeps it; -h because the target is in the read-only store
+  touch -h "$(direnv_layout_dir)/flake-profile"
+  nix --extra-experimental-features "nix-command flakes" profile wipe-history --profile "$(direnv_layout_dir)/flake-profile"
+}
+
+# Usage: use_flox [...]
+#
+# Load environment variables from `flox activate`. By default uses the .flox
+# directory in the current directory.
+#
+# You can specify a FloxHub environment with '--reference=<owner>/<name>' 
+# or `-r=<owner>/<name>`, where <owner>/<name>
+# is the FloxHub environment name (e.g. `use_flox '--reference=myorg/env`).
+#
+# The '--trust' flag can be added to automatically trust FloxHub environments:
+#    use_flox --trust '--reference=myorg/env
+#
+# An alternate local environment directory can be specified with '--dir=<path>',
+# where <path> contains a .flox directory.
+#
+# Example:
+#
+#    use_flox --reference=acme/production
+#    use_flox --dir=/path/to/env
+#
+# Note: Custom commands are not supported since flox activate is used for loading.
+function use_flox() {
+    local flox_dir=".flox"
+    local args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dir=*)
+                flox_dir="${1#*=}"/.flox
+                args+=("$1")
+                shift
+                ;;
+            --dir)
+                if [[ $# -lt 2 ]]; then
+                    printf "direnv(use_flox): --dir flag requires a path argument\n" >&2
+                    return 1
+                fi
+                flox_dir="$2"/.flox
+                args+=("$1" "$2")
+                shift 2
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ! -d "$flox_dir" ]]; then
+        printf "direnv(use_flox): \`.flox\` directory not found at %s\n" "$flox_dir" >&2
+        printf "direnv(use_flox): Did you run \`flox init\` in this directory?\n" >&2
+        return 1
+    fi
+
+    direnv_load flox activate "${args[@]}" -c "$direnv dump"
+
+    if [[ ${#args[@]} -eq 0 ]]; then
+        watch_dir "$flox_dir/env/"
+        watch_file "$flox_dir/env.json"
+        watch_file "$flox_dir/env.lock"
+    fi
+}
+
 # Usage: use_guix [...]
 #
-# Load environment variables from `guix environment`.
-# Any arguments given will be passed to guix environment. For example,
-# `use guix hello` would setup an environment with the dependencies of
-# the hello package. To create an environment including hello, the
-# `--ad-hoc` flag is used `use guix --ad-hoc hello`. Other options
-# include `--load` which allows loading an environment from a
+# Load environment variables from `guix shell`.
+# Any arguments given will be passed to guix shell. For example,
+# `use guix hello` would setup an environment including the hello
+# package. To create an environment with the hello dependencies, the
+# `--development` flag is used `use guix --development hello`. Other
+# options include `--file` which allows loading an environment from a
 # file. For a full list of options, consult the documentation for the
-# `guix environment` command.
+# `guix shell` command.
+# If a channels.scm is available, `guix time-machine -C channels.scm`
+# is automatically invoked before creating the shell.
 use_guix() {
-  eval "$(guix environment "$@" --search-paths)"
+    local arg
+    watch_file guix.scm
+    watch_file manifest.scm
+    watch_file channels.scm
+
+    # Containers cannot run the host direnv binary, so keep using --search-paths.
+    for arg in "$@"; do
+	case "$arg" in
+	--container | --emulate-fhs | -[CF]* | -[!-]*[CF]*)
+	    local result
+	    if [ -f channels.scm ]
+	    then
+		log_status "Using Guix version from channels.scm"
+		result="$(guix time-machine -C channels.scm -- shell "$@" --search-paths)"
+	    else
+		result="$(guix shell "$@" --search-paths)"
+	    fi
+	    eval "$result"
+	    return
+	    ;;
+	esac
+    done
+
+    # direnv_load needs this path preserved so direnv dump can write its output.
+    if [ -f channels.scm ]
+    then
+	log_status "Using Guix version from channels.scm"
+	direnv_load guix time-machine -C channels.scm -- shell "$@" --preserve=^DIRENV_DUMP_FILE_PATH$ -- "$direnv" dump
+    else
+	direnv_load guix shell "$@" --preserve=^DIRENV_DUMP_FILE_PATH$ -- "$direnv" dump
+    fi
 }
+
 
 # Usage: use_vim [<vimrc_file>]
 #
@@ -1169,7 +1572,7 @@ use_vim() {
 
 # Usage: direnv_version <version_at_least>
 #
-# Checks that the direnv version is at least old as <version_at_least>.
+# Checks that the direnv version is no older than <version_at_least>.
 direnv_version() {
   "$direnv" version "$@"
 }
@@ -1206,12 +1609,12 @@ on_git_branch() {
   if ! has git; then
     log_error "on_git_branch needs git, which could not be found on your system"
     return 1
-  elif ! git_dir=$(git rev-parse --absolute-git-dir 2> /dev/null); then
+  elif ! git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null); then
     log_error "on_git_branch could not locate the .git directory corresponding to the current working directory"
     return 1
   elif [ -z "$1" ]; then
     return 0
-  elif [[ "$1" = "-r"  &&  -z "$2" ]]; then
+  elif [[ "$1" = "-r" && -z "$2" ]]; then
     log_error "missing regexp pattern after \`-r\` flag"
     return 1
   fi
@@ -1233,6 +1636,7 @@ __main__() {
   exec 3>&1
   exec 1>&2
 
+  # shellcheck disable=SC2329
   __dump_at_exit() {
     local ret=$?
     "$direnv" dump json "" >&3
@@ -1243,16 +1647,20 @@ __main__() {
 
   # load direnv libraries
   for lib in "$direnv_config_dir/lib/"*.sh; do
+    # Skip the unexpanded glob. nullglob only drops a non-matching pattern
+    # while pathname expansion is enabled; under `set -f` (noglob) the literal
+    # "*.sh" survives and would otherwise be sourced as a missing file.
+    [[ -f $lib ]] || continue
     # shellcheck disable=SC1090
     source "$lib"
   done
 
   # load the global ~/.direnvrc if present
   if [[ -f $direnv_config_dir/direnvrc ]]; then
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "$direnv_config_dir/direnvrc" >&2
   elif [[ -f $HOME/.direnvrc ]]; then
-    # shellcheck disable=SC1090
+    # shellcheck disable=SC1090,SC1091
     source "$HOME/.direnvrc" >&2
   fi
 

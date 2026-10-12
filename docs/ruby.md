@@ -36,15 +36,15 @@ a descriptive syntax like `use ruby 1.9.3` to selects the right ruby version
 for the project.
 
 For that regard we are going to use a couple of commands available in the
-[direnv stdlib](/man/direnv-stdlib.1.md) and expand it a bit in the ~/.direnvrc
+[direnv stdlib](/man/direnv-stdlib.1.md) and expand it a bit in the `~/.config/direnv/direnvrc`
 file.
 
-Add this to the ~/.direnvrc file (you have to create it if it doesn't exist):
+Add this to the `~/.config/direnv/direnvrc` file (you have to create it if it doesn't exist):
 
 ```bash
 # Usage: use ruby <version>
 #
-# Loads the specified ruby version into the environent
+# Loads the specified ruby version into the environment
 #
 use_ruby() {
   local ruby_dir=$HOME/.rubies/$1
@@ -60,7 +60,7 @@ select the right ruby version when you enter the project's folder.
 ## A bit of explanation
 
 The last part probably needs a bit more explanation. We make use of a couple
-of commands that are part of the [stdlib](/man/direnv-stdlib.1.md) which is availabe in
+of commands that are part of the [stdlib](/man/direnv-stdlib.1.md) which is available in
 the execution context of an envrc.
 
 `use` is a command dispatch that's just there to build the
@@ -71,20 +71,20 @@ the execution context of an envrc.
 `<prefix>/bin` into the PATH. This is what makes the specified ruby available.
 
 And finally `layout ruby` who like `use` translates into the `layout_ruby`
-function call. It's used to decribe common project layouts. In the stdlib, the
+function call. It's used to describe common project layouts. In the stdlib, the
 ruby layout will configure rubygems (with the `GEM_HOME` environment variable)
-to install all the gems into the .direnv/ruby/RUBY_VERSION folder under the
+to install all the gems into the `.direnv/ruby/RUBY_VERSION` folder under the
 project root. This is a bit similar to rvm's gemsets except that they live
 inside your project's folder. It also configures bundler to install wrapper
-shims into the .direnv/bin folder which allows you to invoke the commands
+shims into the `.direnv/bin` folder which allows you to invoke the commands
 directly instead of prefixing your ruby programs with `bundle exec` all the
 time.
 
 ## Conclusion
 
 As you see this approach is not restricted to ruby. You could have various
-versions of python installed under ~/.pythons and a `use_python` defined in
-your ~/.direnvrc. Or perl, php, ...  This is the good thing about direnv, it's
+versions of python installed under `~/.pythons` and a `use_python` defined in
+your `~/.direnvrc`. Or perl, php, ...  This is the good thing about direnv, it's
 not restricted to a single language.
 
 Actually, wouldn't it be great to have all your project's dependencies

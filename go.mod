@@ -1,10 +1,11 @@
 module github.com/direnv/direnv/v2
 
-go 1.16
+go 1.26.0
 
 require (
-	github.com/BurntSushi/toml v0.3.1
-	github.com/direnv/go-dotenv v0.0.0-20181227095604-4cce6d1a66f7
-	github.com/mattn/go-isatty v0.0.12
-	golang.org/x/mod v0.4.1
+	github.com/BurntSushi/toml v1.6.0
+	github.com/mattn/go-isatty v0.0.24
+	golang.org/x/mod v0.41.0
 )
+
+require golang.org/x/sys v0.48.0 // indirect

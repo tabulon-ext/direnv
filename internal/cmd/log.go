@@ -1,0 +1,67 @@
+package cmd
+
+import (
+	"fmt"
+	"log"
+)
+
+const (
+	defaultLogFormat = "direnv: %s"
+	errorColor       = "\033[31m"
+	clearColor       = "\033[0m"
+)
+
+var debugging bool
+
+func setupLogging(env Env) {
+	log.SetFlags(0)
+	log.SetPrefix("")
+	if env.IsTrue(DIRENV_DEBUG) {
+		debugging = true
+		log.SetFlags(log.Ltime)
+		log.SetPrefix("direnv: ")
+	}
+}
+
+func logError(c *Config, msg string, a ...any) {
+	if c.LogColor {
+		logMsg(errorColor+defaultLogFormat+clearColor, msg, a...)
+	} else {
+		logMsg(defaultLogFormat, msg, a...)
+	}
+}
+
+func logStatus(c *Config, msg string, a ...any) {
+	format := c.LogFormat
+	shouldLog := true
+	if c.LogFilter != nil {
+		shouldLog = c.LogFilter.MatchString(msg)
+	}
+	if shouldLog && format != "" {
+		if c.LogColor {
+			logMsg(fmt.Sprintf("%s%s", clearColor, format), msg, a...)
+		} else {
+			logMsg(format, msg, a...)
+		}
+	}
+}
+
+func logDebug(msg string, a ...any) {
+	if !debugging {
+		return
+	}
+	defer log.SetFlags(log.Flags())
+	log.SetFlags(log.Flags() | log.Lshortfile)
+	msg = fmt.Sprintf(msg, a...)
+	_ = log.Output(2, msg)
+}
+
+func logMsg(format, msg string, a ...any) {
+	defer log.SetFlags(log.Flags())
+	defer log.SetPrefix(log.Prefix())
+	log.SetFlags(0)
+	log.SetPrefix("")
+
+	msg = fmt.Sprintf(format+"\n", msg)
+	log.Printf(msg, a...)
+}

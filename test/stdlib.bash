@@ -9,7 +9,7 @@ root=$(cd .. && pwd -P)
 export PATH=$root:$PATH
 
 load_stdlib() {
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC1091
   source "$root/stdlib.sh"
 }
 
@@ -60,6 +60,24 @@ test_name dotenv_if_exists
   [[ $FOO = bar ]]
 )
 
+test_name dotenv_fifo
+(
+  load_stdlib
+
+  workdir=$(mktemp -d)
+  trap 'kill %1 2>/dev/null; rm -rf "$workdir"' EXIT
+  cd "$workdir"
+  mkfifo .env
+
+  for fn in dotenv dotenv_if_exists; do
+    unset FOO DIRENV_WATCHES
+    echo "export FOO=bar" >.env &
+    "$fn" .env
+    assert_eq "${FOO:-}" bar
+    assert_eq "${DIRENV_WATCHES:-}" ""
+  done
+)
+
 test_name find_up
 (
   load_stdlib
@@ -74,9 +92,45 @@ test_name source_up
   source_up
 )
 
+test_name eval_propagates_failure
+(
+  workdir=$(mktemp -d)
+  trap 'rm -rf "$workdir"' EXIT
+  cd "$workdir"
+
+  # shellcheck disable=SC2016
+  printf '#!/usr/bin/env bash\n[[ $1 == "$FAIL_CMD" ]] && exit 1\nexec %q "$@"\n' \
+    "$(command -v direnv)" >fake-direnv
+  chmod +x fake-direnv
+  echo "FOO=bar" >.env
+  direnv dump >env.dump
+
+  # a separate process, because errexit is ignored inside `if` and `&&`
+  run_failing() {
+    FAIL_CMD=$1 bash -euo pipefail -c 'source "$1"; direnv=$2; shift 2; "$@"' \
+      _ "$root/stdlib.sh" "$workdir/fake-direnv" "${@:2}"
+  }
+
+  for t in "dotenv dotenv .env" "dotenv dotenv_if_exists .env" \
+    "check-required require_allowed .env" "watch watch_file .env" \
+    "watch-dir watch_dir ." "apply_dump direnv_apply_dump env.dump"; do
+    # shellcheck disable=SC2086
+    if run_failing $t 2>/dev/null; then
+      echo "failure of 'direnv ${t%% *}' was ignored"
+      return 1
+    fi
+  done
+
+  load_stdlib
+  echo "result=kept" >.env
+  dotenv .env
+  assert_eq "$result" kept
+)
+
 test_name direnv_apply_dump
 (
   tmpfile=$(mktemp)
+  # shellcheck disable=SC2329
   cleanup() { rm "$tmpfile"; }
   trap cleanup EXIT
 
@@ -150,7 +204,7 @@ test_name use_julia
     # Fake the existence of a julia binary
     julia=$JULIA_VERSIONS/$version_prefix$version/bin/julia
     mkdir -p "$(dirname "$julia")"
-    echo "#!/usr/bin/env bash
+    echo "#!$(command -v bash)
     echo \"test-julia $version\"" > "$julia"
     chmod +x "$julia"
     # Locally disable set -u (see https://github.com/direnv/direnv/pull/667)
@@ -174,6 +228,34 @@ test_name use_julia
   test_julia ""    "1.5"
 )
 
+test_name use_guix
+(
+  load_stdlib
+  workdir=$(mktemp -d)
+  trap 'rm -rf "$workdir"' EXIT
+  cd "$workdir"
+
+  # shellcheck disable=SC2329
+  guix() { echo "mode=search"; }
+  # shellcheck disable=SC2329
+  direnv_load() { mode=load; }
+  # shellcheck disable=SC2329
+  watch_file() { :; }
+
+  for args in --container -C -NC --emulate-fhs -F "-m m.scm -CF"; do
+    mode=
+    # shellcheck disable=SC2086
+    use_guix $args
+    assert_eq "$mode" search
+  done
+  for args in --file=Config.scm "-f Foo.scm" --development hello; do
+    mode=
+    # shellcheck disable=SC2086
+    use_guix $args
+    assert_eq "$mode" load
+  done
+)
+
 test_name source_env_if_exists
 (
   load_stdlib
@@ -190,6 +272,117 @@ test_name source_env_if_exists
   echo "export FOO=bar" > existing_file
   source_env_if_exists existing_file
   [[ $FOO = bar ]]
+
+  # Expect correct path being logged
+  export HOME=$workdir
+  output="$(source_env_if_exists existing_file 2>&1 > /dev/null)"
+  [[ "${output#*'loading ~/existing_file'}" != "$output" ]]
+)
+
+test_name env_vars_required
+(
+  load_stdlib
+
+  export FOO=1
+  env_vars_required FOO
+
+  # these should all fail
+  # shellcheck disable=SC2034
+  BAR=1
+  export BAZ=
+  output="$(env_vars_required BAR BAZ MISSING 2>&1 > /dev/null || echo "--- result: $?")"
+
+  [[ "${output#*'--- result: 1'}" != "$output" ]]
+  [[ "${output#*'BAR is required'}" != "$output" ]]
+  [[ "${output#*'BAZ is required'}" != "$output" ]]
+  [[ "${output#*'MISSING is required'}" != "$output" ]]
+)
+
+
+test_name require_allowed_security
+(
+  load_stdlib
+  set +e
+
+  # Test that absolute paths are rejected
+  output="$(require_allowed /etc/passwd 2>&1)"
+  result=$?
+  [[ $result -eq 1 ]]
+  [[ "${output#*'path must be relative'}" != "$output" ]]
+
+  # Test that parent traversal paths are rejected
+  output="$(require_allowed ../etc/passwd 2>&1)"
+  result=$?
+  [[ $result -eq 1 ]]
+  [[ "${output#*'must not contain'}" != "$output" ]]
+
+  # Test that paths with .. in the middle are rejected
+  output="$(require_allowed foo/../bar 2>&1)"
+  result=$?
+  [[ $result -eq 1 ]]
+  [[ "${output#*'must not contain'}" != "$output" ]]
+)
+
+test_name layout_uv
+(
+  load_stdlib
+
+  if ! has uv; then
+    echo "WARN: uv not found, skipping layout_uv test"
+    exit 0
+  fi
+
+  workdir=$(mktemp -d)
+  trap 'rm -rf "$workdir"' EXIT
+  cd "$workdir"
+
+  # fails without a pyproject.toml
+  output=$(layout_uv 2>&1 || true)
+  [[ "${output#*'no pyproject.toml'}" != "$output" ]]
+
+  # succeeds with a valid project and lockfile
+  cat <<EOF >pyproject.toml
+[project]
+name = "test-direnv-uv"
+version = "0.1.0"
+dependencies = []
+EOF
+  uv lock
+  layout_uv --no-dev
+
+  [[ -d .venv ]]
+  [[ "$VIRTUAL_ENV" == "$workdir/.venv" ]]
+  [[ "$UV_PROJECT_ENVIRONMENT" == "$workdir/.venv" ]]
+)
+
+test_name global_lib_noglob
+(
+  # Regression test for https://github.com/direnv/direnv/issues/1610
+  # With pathname expansion disabled (set -f / noglob) and no global library
+  # files present, direnv must not source the literal "*.sh" glob and emit a
+  # spurious missing-file diagnostic for the optional lib directory.
+  workdir=$(mktemp -d)
+  trap 'rm -rf "$workdir"' EXIT
+
+  mkdir -p "$workdir/home" "$workdir/project" "$workdir/config/direnv"
+  echo "export DIRENV_NOGLOB_TEST=1" > "$workdir/project/.envrc"
+
+  HOME="$workdir/home" XDG_CONFIG_HOME="$workdir/config" \
+    DIRENV_CONFIG="$workdir/config/direnv" \
+    direnv allow "$workdir/project/.envrc" >/dev/null 2>&1
+
+  output="$(
+    cd "$workdir/project"
+    env HOME="$workdir/home" XDG_CONFIG_HOME="$workdir/config" \
+      DIRENV_CONFIG="$workdir/config/direnv" \
+      SHELLOPTS=braceexpand:hashall:interactive-comments:noglob \
+      direnv export bash 2>&1 >/dev/null
+  )"
+
+  if [[ "$output" == *"lib/*.sh"* ]]; then
+    echo "unexpected missing-library diagnostic under noglob: $output"
+    return 1
+  fi
 )
 
 # test strict_env and unstrict_env

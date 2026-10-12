@@ -1,28 +1,56 @@
-{ pkgs ? import ./nix { } }:
-with pkgs;
-
-buildGoModule rec {
-  name = "direnv-${version}";
+{
+  buildGoApplication,
+  lib,
+  stdenv,
+  bash,
+  __includeMan ? true,
+}:
+buildGoApplication {
+  pname = "direnv";
   version = lib.fileContents ./version.txt;
   subPackages = [ "." ];
 
-  vendorSha256 = "1kmgl3wkbyirqkf7rwlcss8ml7incxclsb36nskwx1w6b1ilphrz";
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions (
+      [
+        ./go.mod
+        ./go.sum
+        ./gomod2nix.toml
+        ./GNUmakefile
+        ./stdlib.sh
+        ./version.txt
+        (lib.fileset.fileFilter (file: file.hasExt "go") ./.)
+      ]
+      ++ lib.optional __includeMan (lib.fileset.fileFilter (file: file.hasExt "1") ./man)
+    );
+  };
 
-  src = lib.cleanSource ./.;
+  modules = ./gomod2nix.toml;
 
   # we have no bash at the moment for windows
-  makeFlags = stdenv.lib.optional (!stdenv.hostPlatform.isWindows) [
-    "BASH_PATH=${bash}/bin/bash"
-  ];
+  BASH_PATH = lib.optionalString (!stdenv.hostPlatform.isWindows) "${bash}/bin/bash";
+
+  # replace the build phase to use the GNUMakefile instead
+  buildPhase = ''
+    ls -la ./vendor
+    make BASH_PATH=$BASH_PATH
+  '';
 
   installPhase = ''
+    echo $GOCACHE
     make install PREFIX=$out
   '';
 
-  meta = with stdenv.lib; {
+  checkPhase = ''
+    make test-go
+  '';
+
+  meta = {
     description = "A shell extension that manages your environment";
-    homepage = https://direnv.net;
-    license = licenses.mit;
-    maintainers = with maintainers; [ zimbatm ];
+    homepage = "https://direnv.net";
+    license = lib.licenses.mit;
+    maintainers = [ lib.maintainers.zimbatm ];
+    mainProgram = "direnv";
   };
 }

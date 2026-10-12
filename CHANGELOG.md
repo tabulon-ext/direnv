@@ -1,3 +1,305 @@
+2.38.2 / 2026-10-10
+==================
+
+  * fix(zsh): load the .envrc in a new shell and on cd from shell functions again (#1633, #1634)
+  * fix(fish): stop completions from breaking after the first prompt (#1635, #1636)
+  * fix(pixi): require_allowed for the manifest file as well (#1632)
+
+2.38.1 / 2026-10-06
+==================
+
+  * v2.38.0 was tagged but not published, because its binaries failed to upload (#1630)
+  * direnv now requires go 1.26 (#1623)
+  * the Windows release binaries are now named direnv.windows-<arch>.exe (#1460, #1627)
+  * feat: add `layout uv` (#1594)
+  * feat: add `layout pixi` (#1560)
+  * feat: add `require_allowed` (#1530)
+  * feat: add DIRENV_DISABLE to stop direnv from changing the environment (#1048)
+  * feat: add DIRENV_EXE_PATH (#1564)
+  * feat: allow multi-line env vars (#1442)
+  * feat: allow named pipes as .env files (#1557)
+  * feat: disable status logging with `log_format = "-"` (#1476)
+  * feat(prune): remove outdated hashes (#1451)
+  * feat(bash): use ble.sh's PRECMD hook when available (#1439)
+  * feat(zsh): only run the hook from the top level (#1583)
+  * fish: update fish_complete_path when XDG_DATA_DIRS changes (#1540)
+  * fix: report .envrc failures and load values over 64KB again (#1625)
+  * fix: don't wait forever on processes forked by the .envrc (#1527)
+  * fix: escape the direnv path in bash code (#1626)
+  * fix: unload the environment when the .envrc is deleted (#1562)
+  * fix: `direnv reload` doing nothing after `direnv deny` (#1543)
+  * fix: misleading "unloading" message when nothing was loaded (#1592)
+  * fix: panic on malformed environment variables (#1496)
+  * fix: always consider DIRENV_LOG_FORMAT if it is set (#1475)
+  * fix: inverted log color when direnv.toml is present (#1620)
+  * fix(bash,zsh): don't block SIGINT while evaluating .envrc (#1479)
+  * fix(bash,zsh): preserve existing SIGINT traps (#1621)
+  * fix(pwsh): quote the direnv.exe path (#1598)
+  * fix(pwsh): emit removals before assignments in export (#1622)
+  * fix(dotenv): honour the backslash escape before a dollar sign (#1618)
+  * fix(dotenv): don't let comment lines start multi-line values (#1608)
+  * fix(dotenv): don't watch named pipes (#1591)
+  * fix(stdlib): stop on failing command substitutions (#1505, #1624)
+  * fix(stdlib): skip the unexpanded lib glob under noglob (#1611)
+  * fix(use_flake): keep the environment alive by refreshing the profile (#1506)
+  * fix(use_flox): use -c to honor profile hooks (#1581)
+  * fix(use_guix): preserve GUIX_ENVIRONMENT (#1587)
+  * fix(use_nix): unset structured attribute variables (#1532)
+  * fix(fetchurl): spurious warnings on first download (#1569)
+  * perf: fix quadratic string building in the shell escapers (#1612)
+  * fix(release): publish the binaries with the release (#1630)
+  * install.sh: support MSYS (#1502)
+  * build: make PREFIX customizable (#1537)
+  * build: skip -linkmode=external when CGO_ENABLED=0 (#1567)
+  * ci: split the flake checks and drop duplicate GitHub jobs (#1628)
+  * docs: add llms.txt (#1607)
+  * docs: add 403 troubleshooting (#1571)
+  * docs: add missing watch_dir documentation (#1516)
+  * docs: fix the Nushell hook example (#1526)
+  * docs: make it clear which commands are aliases in help output (#1481)
+  * docs: various fixes (#1433, #1468, #1473, #1486, #1497, #1534, #1541, #1582, #1602, #1603)
+  * chore: bump dependencies
+
+2.37.1 / 2025-07-20
+==================
+
+  * fix: regression in displaying export errors (#1469)
+
+2.37.0 / 2025-07-02
+==================
+
+  * docs: add github-actions page
+  * docs: document sub-commands
+  * docs: fix link to guix manual (#1421)
+  * docs: re-generate manpages
+  * feat(direnv export gha): strengthen export format
+  * feat: add windows arm64 target (#1444)
+  * fix(powershell): "export pwsh" to resolve PowerShell special character issues (#1448)
+  * fix(python): do not include patch level in virtual environment names (#1423)
+  * fix(use_nix): always restore special variables (#1424)
+  * fix: accept true as valid DIRENV_DEBUG value (#1365)
+  * fix: add trailing newline to error messages (#1426)
+  * fix: delete duplicate ansi escape code
+
+v2.36.0 / 2025-04-11
+==================
+
+  * direnv now requires go 1.24 (#1384)
+  * doc: Correct duplicate usage of 'with' in the direnv(1) (#1394)
+  * doc: note direnv version for log_{format,filter} (#1369)
+  * feat: Add `use_flox` to stdlib.sh (#1372)
+  * feat: logging filter (#1336)
+  * fix use_nix: unset TMPDIR variables (#1409)
+  * fix: A more universal fix for the python 3.14 `find_spec` deprecation warning (#1382)
+  * fix: Don't give an error when the current directory doesn't exist (#1395)
+  * fix: add support to fully reproducible guix shells (#1392)
+  * fix: assert minimum powershell version (#1385)
+  * fix: escape newlines in generated vimscript (#1347)
+  * fix: fix empty array error in install.sh (#1406)
+  * fix: optionally authenticate against github api during install (#1337)
+  * fix: use_guix: Enable the watching of Guix related files. (#1353)
+
+2.35.0 / 2024-10-07
+==================
+
+  * doc: Add version requirement for load_dotenv option (#1326)
+  * doc: change Guix link to its package search. (#1268)
+  * doc: fix broken link (#1327)
+  * doc: update elvish docs (#1305)
+  * feat: add opam support (#1298)
+  * fix: add NuShell into list of supported shells (#1260)
+  * fix: close tmp file (#1272)
+  * fix: direnv edit: use `editor` when EDITOR not found, closes #1246 (#1247)
+  * fix: release script
+  * fix: stdlib: enable flakes when use flake is used (#1299)
+  * fix: stdlib: export GOBIN for layout_go (#1286)
+  * fix: stdlib: update layout_python to resolve deprecation warning (#1176)
+  * fix: using PWD in .env files (#1052)
+  * test: Fix Murex python-layout test (#1293)
+
+2.34.0 / 2024-03-01
+==================
+
+  * doc: README.md, man pages: it's typos (#1230)
+  * doc: add shell setup instructions for oh-my-zsh (#1070)
+  * doc: added fetchurl manpage link to README.md
+  * doc: document XDG_DATA_HOME (#1185)
+  * doc: update installation.md for Gentoo (#1206)
+  * feat: add Murex support (#1242)
+  * feat: added systemd shell for export (#1126)
+  * feat: allow to disable warn timeouts (#1209)
+  * feat: hide env diff (#1223, #1234)
+  * feat: made 'direnv export' non private (#1229)
+  * fix: `use_julia` should not set LD_LIBRARY_PATH (#900)
+  * fix: add missing deps for release in go.mod
+  * fix: avoid use of regex in bash hook output (#1043)
+  * fix: direnv.toml.1.md: add examples for $HOME expansion
+  * fix: stdlib: use_flake: don't keep old generations around (#1089)
+  * fix: stdlib: use_node: strip leading v from version (#1071)
+  * fix: support Bash 5.1 array PROMPT_COMMAND (#1208)
+  * fix: update stdlib.sh to avoid deprecation warning (#1221)
+  * fix: update zsh syntax in internal/cmd/shell_zsh.go (#1075)
+
+2.33.0 / 2023-11-29
+==================
+
+  * doc: add a Nushell section to `hook.md` by @amtoine in https://github.com/direnv/direnv/pull/1175
+  * doc: fix broken links in installation.md by @just1602 in https://github.com/direnv/direnv/pull/1110
+  * doc: show how to run tests by @bukzor-sentryio in https://github.com/direnv/direnv/pull/1137
+  * doc: update NixOS installation instructions by @Gerg-L in https://github.com/direnv/direnv/pull/1172
+  * doc: update direnv.toml.1.md by @Ativerc in https://github.com/direnv/direnv/pull/1099
+  * feat: `direnv status --json` by @shivaraj-bh in https://github.com/direnv/direnv/pull/1142
+  * feat: add PowerShell Support by @bamsammich in https://github.com/direnv/direnv/pull/1171
+  * feat: add mergify configuration by @Mic92 in https://github.com/direnv/direnv/pull/1147
+  * feat: add support for armv7l platform in install.sh by @ardje in https://github.com/direnv/direnv/pull/1162
+  * feat: add watch print command by @Mic92 in https://github.com/direnv/direnv/pull/1198
+  * feat: alias `direnv disallow` to deny by @will in https://github.com/direnv/direnv/pull/1182
+  * feat: stdlib: create CACHEDIR.TAG inside .direnv by @Mic92 in https://github.com/direnv/direnv/pull/1148
+  * fix: `allowPath` for `LoadedRC` by @shivaraj-bh in https://github.com/direnv/direnv/pull/1157
+  * fix: don't prompt to allow if user explicitly denied by @Gabriella439 in https://github.com/direnv/direnv/pull/1158
+  * fix: man/direnv-stdlib: fix obsolete opam-env example by @mzacho in https://github.com/direnv/direnv/pull/1170
+  * fix: print correct path in source_env log message by @wentasah in https://github.com/direnv/direnv/pull/1144
+  * fix: quote tcsh $PATH, to avoid failure on whitespace by @bukzor-sentryio in https://github.com/direnv/direnv/pull/1139
+  * fix: remove redundant nil check in `CommandsDispatch` by @Juneezee in https://github.com/direnv/direnv/pull/1166
+  * fix: update nixpkgs and shellcheck by @Mic92 in https://github.com/direnv/direnv/pull/1146
+
+2.32.3 / 2023-05-20
+==================
+
+  * fix: incorrect escape sequences during Loads under git-bash (Windows) (#1085)
+  * fix: skip some tests for IBM Z mainframe's z/OS operating system (#1094)
+  * fix: stdlib: use_guix: Switch to guix shell. (#1045)
+  * fix: stat the already open rc file rather than another path based one on it (#1044)
+  * fix: remove deprecated io/ioutil uses (#1042)
+  * fix: spelling fixes (#1041)
+  * fix: appease Go 1.19 gofmt (#1040)
+  * fix: pass BASH_PATH to make, matches the nixpkgs derivation (#1006)
+  * fix: stdlib/layout_python: exclude patchlevel from $python_version (#1033)
+  * doc: add Windows installation with winget (#1096)
+  * doc: link 12factor webpage for more clarity (#1095)
+  * website: add Plausible analytics
+
+2.32.2 / 2022-11-24
+==================
+
+  * doc: Add stdlib's layout_pyenv to docs (#969)
+  * doc: Fix broken link (#991)
+  * doc: Minor typo fix (#1013)
+  * doc: `$XDG_CONFIG_HOME/direnv/direnv.toml` => add (typically ~/.config/direnv/direnv.toml) (#985)
+  * doc: add quickenv to Related projects (#970)
+  * feat: Update layout anaconda to accept a path to a yml file (#962)
+  * feat: install.sh: can specify direnv version (#1012)
+  * fix: elvish: replace deprecated `except` with `catch` (#987)
+  * fix: installer.sh: make direnv executable for all
+  * fix: path escaping (#975)
+  * fix: stdlib: only use ANSI escape on TTY (#958)
+  * fix: test: remove mentions of DIRENV_MTIME (#1009)
+  * fix: test: use lowercase -d flag for base64 decoding of DIRENV_DIFF (#996)
+  * update: build(deps): bump github.com/BurntSushi/toml from 1.1.0 to 1.2.0 (#974)
+
+2.32.1 / 2022-06-21
+==================
+
+  * feat: Support custom VIRTUAL_ENV for layout_python (#876)
+  * fix: vendor go-dotenv (#955)
+
+2.32.0 / 2022-06-13
+==================
+
+  * feat: Add gha shell for GitHub Actions (#910)
+  * feat: Enable ppc64le builds (#947)
+  * feat: allow conda environment names to be detected from environment.yml (#909)
+  * feat: source_up_if_exists: A strict_env compatible version of source_up (#921)
+  * feat: Expand ~/ in whitelist paths (#931)
+  * feat: Add "block" and "revoke" as aliases of the "deny" command (#935)
+  * feat: Add "permit" and "grant" as aliases of the "allow" command (#935)
+  * fix: update go-dotenv
+  * fix: fetchurl: store files as hex (#930)
+  * fix: fetchurl: only store 200 responses (#944)
+  * fix: Ensure status log messages are printed with normal color (#884)
+  * fix: Clarify handling of .env files (#941)
+  * fix: Update shell_elvish.go (#896)
+  * fix: stdlib.sh: remove dependency on tput (#932)
+  * fix: Use setenv in vim to allow non alphanumeric vars (#901)
+  * fix: install.sh: add information about bin_path (#920)
+  * fix: Treat `mingw*` as windows (direnv/direnv#918) (#919)
+  * fix: man: clarify paths (#929)
+  * fix: installation.md: Fix Fedora package link (#915)
+  * Merge pull request #874 from direnv/refactor
+  * chore: rc: stop using --noprofile --norc
+  * chore: rc: prepare stdin earlier
+  * chore: rc: install interrupt handler earlier
+  * chore: stdlib: factor out stdlib preparation
+  * chore: fix CI
+  * chore: source_env: show full path (#870)
+  * chore: Sort shells in DetectShell
+  * chore: Enable codeql action (#938)
+  * chore: Set permissions for GitHub actions (#937)
+  * go: bump golang.org/x/sys for linux/loong64 support (#946)
+  * build(deps): bump actions/checkout from 2.4.0 to 3.0.0 (#922)
+  * build(deps): bump actions/checkout from 3.0.0 to 3.0.1 (#933)
+  * build(deps): bump actions/checkout from 3.0.1 to 3.0.2 (#936)
+  * build(deps): bump actions/setup-go from 2.1.5 to 3.0.0 (#923)
+  * build(deps): bump actions/setup-go from 3.0.0 to 3.1.0 (#943)
+  * build(deps): bump actions/setup-go from 3.1.0 to 3.2.0 (#950)
+  * build(deps): bump cachix/install-nix-action from 16 to 17 (#925)
+  * build(deps): bump github.com/BurntSushi/toml from 0.4.1 to 1.1.0 (#924)
+
+2.31.0 / 2022-03-26
+==================
+
+  * Don't load .env files by default (#911)
+  * doc: `~/.config/direnv/direnvrc` is the default
+  * doc: fix the broken link to arch linux (#892)
+  * Re-add accidentally deleted comment line (#881)
+  * fix version test
+
+2.30.3 / 2022-01-05
+==================
+
+  * Allow skipping `.env` autoload (#878)
+  * stdlib: add `env_vars_required` (#872) (#872)
+  * Test whether version.txt contains semantic version (#871)
+
+2.30.2 / 2021-12-28
+==================
+
+  * FIX: version: trim surrounding spaces (#869)
+  * build(deps): bump actions/setup-go from 2.1.4 to 2.1.5 (#866)
+  * move most code under internal/cmd (#865)
+
+2.30.1 / 2021-12-24
+==================
+
+  * FIX: ignore .envrc and .env if they are not files (#864)
+
+2.30.0 / 2021-12-23
+==================
+
+  * Add automatic `.env` load (#845)
+  * Resolve symlinks during `direnv deny` (#851)
+  * update installer for Apple Silicon (#849)
+  * stdlib: use_flake handle no layout dir (#861)
+  * embed stdlib.sh (#782)
+  * embed version.txt
+  * go mod update
+  * make dist: remove references to Go
+
+2.29.0 / 2021-11-28
+==================
+
+  * stdlib: add use_flake function (#847)
+  * docs(direnv.toml) Add config.toml clarification (#831)
+  * docs(install): fix macos links (#841)
+  * Corrects stdlib link in Ruby docs (#837)
+  * stdlib.sh: Fix removal of temp file (#830)
+  * install.sh: add aarch64 support
+  * Updated conditional for zsh hook to be more forgiving (#808)
+  * Add -r flag for matching Git branches with a regexp (#800)
+  * Add docs about pipenv (#797)
+  * Enable syntax highlights to the quick demo code (#752)
+  * Fixed extra quotes for lower alpha characters (#783)
+  * Remove noisy warning about PS1 again (#781)
 
 2.28.0 / 2021-03-12
 ==================
@@ -227,7 +529,7 @@ expose issues with existing `.envrc` files.
   * Handle failing pipenv on empty file and avoid an extra pipenv execution (#510)
   * fix `source_env` behaviour when the file doesn't exists (#487)
   * `watch_file` can now watch multiple files in a single invocation (#524)
-  * `layout_python`: prefer venv over virtualenv. Do not export VIRUAL_ENV if $python_version is unavailable or a virtual environment does not exist/can't be created
+  * `layout_python`: prefer venv over virtualenv. Do not export VIRTUAL_ENV if $python_version is unavailable or a virtual environment does not exist/can't be created
   * Adds layout_pyenv (#505)
   * Fix `source_up` docs to explain that search starts in parent directory (#518)
   * fix `path_add` to not leak local variables
@@ -254,7 +556,7 @@ expose issues with existing `.envrc` files.
   * FIX: Perform stricter search for existing Anaconda environments (#462)
   * FIX: arity mismatch for elvish (#482)
   * FIX: avoid reloading on each prompt after error (#468)
-  * FIX: improve bash hook handlign of empty PROMPT_COMMAND (#473)
+  * FIX: improve bash hook handling of empty PROMPT_COMMAND (#473)
   * FIX: improved the tests for bash, zsh, fish and tcsh (#469)
   * MISC: migrated from Travis CI to Azure Pipelines (#484)
 
@@ -524,7 +826,7 @@ Thanks @bbense @vially and @dadooda for corrections in the docs
  * CHANGE: Allow arbitrary number of args in `log_status`
  * CHANGE: Bump command timeout to 5 seconds
  * FIX: Adds selected bash executable in `direnv status`
- * FIX: man changes, replaced abandonned ronn by md2man
+ * FIX: man changes, replaced abandoned ronn by md2man
  * FIX: `make install` was creating a ./bin directory
  * FIX: issue #114 - work for blank envs. Thanks @pwaller !
  * FIX: man pages warning. Thanks @punitagrawal !
